@@ -2,9 +2,10 @@ import xarray as xr
 import matplotlib.pyplot as plt
 import numpy as np
 import cartopy.crs as ccrs
+from matplotlib.animation import FuncAnimation
 
 # 1. Load GRIB data using xarray with cfgrib engine
-grib_file = '5f5a242007810c1007258e05fa0ca38d.grib'  # Replace with your GRIB file path
+grib_file = '77df4cfa0cc7db1727b16c3ef2cb92e5.grib'  # Replace with your GRIB file path
 ds = xr.open_dataset(grib_file, engine='cfgrib')
 
 # 2. Inspect the available variables in the dataset
@@ -14,39 +15,49 @@ print(ds)  # This will print the dataset structure so you can identify U and V c
 u = ds['u']  # Replace with the actual name in your dataset
 v = ds['v']  # Replace with the actual name in your dataset
 
-# 4. Optional: Check the dimensions of u and v
-print("U shape:", u.shape)
-print("V shape:", v.shape)
+# 4. Check if a time dimension exists
+if 'time' in ds.dims:
+    times = ds['time']
+    print("Time dimension found:", times)
+else:
+    raise ValueError("No time dimension found in the dataset.")
 
-# 5. Compute the magnitude of the vector field
-magnitude = np.sqrt(u**2 + v**2)
-
-# 6. Define a threshold for magnitude
-magnitude_threshold = 10  # Change this value to adjust the threshold
-
-# 7. Filter the vectors based on magnitude
-mask = magnitude >= magnitude_threshold
-
-# 8. Normalize the vectors (scale the vectors according to their magnitudes)
-u_normalized = u * mask / magnitude  # Normalize u components based on magnitude
-v_normalized = v * mask / magnitude  # Normalize v components based on magnitude
-
-# 9. Plot the vector field using a quiver plot
+# 5. Create a figure for the animation
 fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree()})
-
-# Apply the mask to filter vectors and plot only the ones above the threshold
-quiver = ax.quiver(ds['longitude'][::5], ds['latitude'][::5], 
-                  u_normalized[::5, ::5], v_normalized[::5, ::5], 
-                  magnitude[::5, ::5] * mask[::5, ::5], scale=50, width=0.002, 
-                  cmap='viridis', pivot='middle')
-
-# 10. Add coastlines, gridlines, and a colorbar
 ax.coastlines()
 ax.gridlines()
-fig.colorbar(quiver, ax=ax, orientation='vertical', label='Magnitude')
+quiver = None
 
-# 11. Add a title
-ax.set_title('Vector Field of U and V Components (Magnitude Thresholded)')
+# Function to update the frame
+def update(frame):
+    global quiver
+    time_idx = frame
+    time = times[time_idx]
 
-# 12. Show the plot
+    # Select data for the current time step
+    u_time = u.isel(time=time_idx)
+    v_time = v.isel(time=time_idx)
+
+    # Compute magnitude and normalize
+    magnitude = np.sqrt(u_time**2 + v_time**2)
+    magnitude_threshold = 10
+    mask = magnitude >= magnitude_threshold
+    u_normalized = u_time * mask / magnitude
+    v_normalized = v_time * mask / magnitude
+
+    # Clear previous quiver
+    if quiver:
+        quiver.remove()
+
+    # Plot the vector field
+    quiver = ax.quiver(ds['longitude'][::5], ds['latitude'][::5], 
+                       u_normalized[::5, ::5], v_normalized[::5, ::5], 
+                       magnitude[::5, ::5] * mask[::5, ::5], scale=50, width=0.002, 
+                       cmap='viridis', pivot='middle')
+    ax.set_title(f'Vector Field at {time.values}')
+
+# Create the animation
+ani = FuncAnimation(fig, update, frames=len(times), repeat=True)
+
+# Show the animation
 plt.show()
