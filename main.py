@@ -6,7 +6,7 @@ import cartopy.crs as ccrs
 from matplotlib.animation import FuncAnimation
 
 
-grib_file = 'data2.grib'  # Replace with your GRIB file path
+grib_file = 'data950pa.grib'  # Replace with your GRIB file path
 ds = xr.open_dataset(grib_file, engine='cfgrib')
 
 
@@ -84,41 +84,23 @@ def update(frame):
     # Calculate wind magnitude
     magnitude = np.sqrt(u_time**2 + v_time**2)
 
-    # Identify points where wind speed is near zero
-    zero_wind_threshold = 0.5  # Define a small threshold
-    low_wind_idx = np.where(magnitude.values < zero_wind_threshold)
+    vorticityThreshold = 0.0002
 
-    # Extract coordinates of low-wind regions
-    low_wind_lats = ds['latitude'].values[::-1][low_wind_idx[0]]
-    low_wind_lons = ds['longitude'].values[low_wind_idx[1]]
-
-    # Compute the Jacobian (partial derivatives)
     dx = np.gradient(ds['longitude'].values)[0] * 111000  # Convert degrees to meters
     dy = np.gradient(ds['latitude'].values)[0] * 111000  # Convert degrees to meters
 
-    # Compute gradients
-    dudx = np.gradient(u_time.values, axis=1) / dx
-    dvdy = np.gradient(v_time.values, axis=0) / dy
-    dudy = np.gradient(u_time.values, axis=0) / dy
-    dvdx = np.gradient(v_time.values, axis=1) / dx
+    high_vorticity_idx = np.where(calculate_vorticity(u_time, v_time, dx,dy) > vorticityThreshold)
 
-    # Jacobian matrix components
-    jacobian_det = dudx * dvdy - dudy * dvdx
-    jacobian_trace = dudx + dvdy
-
-    # Identify centers: Jacobian determinant nonzero, trace zero
-    centers = np.where((np.abs(jacobian_det) > 1e-3) & (np.abs(jacobian_trace) < 1e-3))
-
-    # Mark centers in the low-wind regions
-    center_lats = ds['latitude'].values[::-1][centers[0]]
-    center_lons = ds['longitude'].values[centers[1]]
+    # Extract coordinates of low-wind regions
+    low_wind_lats = ds['latitude'].values[::-1][high_vorticity_idx[0]]
+    low_wind_lons = ds['longitude'].values[high_vorticity_idx[1]]
 
     # Normalize vectors for RGB encoding
     u_normalized = u_time / magnitude
     v_normalized = v_time / magnitude
-    R = (u_normalized + 1) / 2  # Map from [-1, 1] to [0, 1]
-    G = (v_normalized + 1) / 2  # Map from [-1, 1] to [0, 1]
-    B = magnitude / np.max(magnitude)  # Normalize magnitude for brightness
+    R = (u_normalized + 1) / 2 * magnitude / np.max(magnitude)  # Map from [-1, 1] to [0, 1]
+    G = (v_normalized + 1) / 2 * magnitude / np.max(magnitude) # Map from [-1, 1] to [0, 1]
+    B = magnitude / np.max(magnitude) *magnitude / np.max(magnitude) # Normalize magnitude for brightness
 
     # Create RGB image
     rgb_image = np.dstack((R, G, B))
@@ -135,11 +117,11 @@ def update(frame):
         transform=ccrs.PlateCarree()
     )
 
-    # Mark center points
+    # Mark low-wind-speed points
     if center_marker:
         center_marker[0].remove()
     center_marker = ax.plot(
-        center_lons, center_lats, 'bo', markersize=4, label='Low Wind Speed'
+        low_wind_lons, low_wind_lats, 'bo', markersize=4, label='Low Wind Speed'
     )
     ax.legend(loc='upper right')
     ax.set_title(f'Normal Map and Low Wind Regions at {time.values}')
