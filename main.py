@@ -40,37 +40,40 @@ def calculate_vorticity(u, v, dx, dy):
 def compute_jacobian(u, v, dx, dy):
     """
     Compute the Jacobian matrix at each grid point for the 2D velocity field.
+    Returns the Jacobian matrix as a 2x2 matrix.
     """
+    # Compute differences with appropriate shifts
     dudx = (u.shift(longitude=-1) - u) / dx
     dudy = (u.shift(latitude=-1) - u) / dy
     dvdx = (v.shift(longitude=-1) - v) / dx
     dvdy = (v.shift(latitude=-1) - v) / dy
 
-    # Construct the Jacobian matrix
-    J11 = dudx
-    J12 = dudy
-    J21 = dvdx
-    J22 = dvdy
+    # Check for NaNs or Infs in the calculated derivatives
+    if np.any(np.isnan([dudx, dudy, dvdx, dvdy])) or np.any(np.isinf([dudx, dudy, dvdx, dvdy])):
+        return None, None, None, None  # Invalid Jacobian
 
-    return J11, J12, J21, J22
+    # Return Jacobian components
+    return dudx, dudy, dvdx, dvdy
 
 def is_center(J11, J12, J21, J22):
     """
     Check if the Jacobian matrix corresponds to a center (purely imaginary eigenvalues).
-    The Jacobian matrix is represented as:
-    [[J11, J12],
-     [J21, J22]]
     """
+    if J11 is None or J12 is None or J21 is None or J22 is None:
+        return False  # Skip invalid Jacobian matrices
 
-    # Construct the Jacobian matrix
+    # Construct the Jacobian matrix from its components
     J = np.array([[J11, J12], [J21, J22]])
 
-    # Compute the eigenvalues of the Jacobian matrix
+    # Check for NaNs or Infs in the Jacobian matrix
+    if np.any(np.isnan(J)) or np.any(np.isinf(J)):
+        return False  # Skip invalid Jacobian matrices
+
+    # Compute eigenvalues of the Jacobian matrix
     eigvals = la.eigvals(J)
 
-    # Check if both eigenvalues are purely imaginary (i.e., the real part is near zero)
-    return np.isclose(np.real(eigvals[0]), 0) and np.isclose(np.real(eigvals[1]), 0) and \
-           np.imag(eigvals[0]) != 0 and np.imag(eigvals[1]) != 0
+    # Check if eigenvalues are purely imaginary (i.e., real part is close to zero)
+    return np.isclose(np.real(eigvals[0]), 0) and np.isclose(np.real(eigvals[1]), 0) and np.imag(eigvals[0]) != 0 and np.imag(eigvals[1]) != 0
 
 def update(frame):
     global center_marker
@@ -92,26 +95,26 @@ def update(frame):
     low_wind_lats = ds['latitude'].values[::-1][low_wind_idx[0]]
     low_wind_lons = ds['longitude'].values[low_wind_idx[1]]
 
-    # Compute the Jacobian (partial derivatives)
-    dx = np.gradient(ds['longitude'].values)[0] * 111000  # Convert degrees to meters
-    dy = np.gradient(ds['latitude'].values)[0] * 111000  # Convert degrees to meters
+    # Initialize list for centers
+    centers_lats = []
+    centers_lons = []
 
-    # Compute gradients
-    dudx = np.gradient(u_time.values, axis=1) / dx
-    dvdy = np.gradient(v_time.values, axis=0) / dy
-    dudy = np.gradient(u_time.values, axis=0) / dy
-    dvdx = np.gradient(v_time.values, axis=1) / dx
+    # Compute Jacobian and check for centers at low-wind locations
+    dx = np.gradient(ds['longitude'].values)[0] * 111000  
+    dy = np.gradient(ds['latitude'].values)[0] * 111000  
 
-    # Jacobian matrix components
-    jacobian_det = dudx * dvdy - dudy * dvdx
-    jacobian_trace = dudx + dvdy
+    for lat_idx, lon_idx in zip(low_wind_idx[0], low_wind_idx[1]):
+        # Calculate the Jacobian components
+        J11, J12, J21, J22 = compute_jacobian(u_time, v_time, dx, dy)
 
-    # Identify centers: Jacobian determinant nonzero, trace zero
-    centers = np.where((np.abs(jacobian_det) > 1e-3) & (np.abs(jacobian_trace) < 1e-3))
+        # Skip if Jacobian is invalid (contains NaN or Inf)
+        if J11 is None or J12 is None or J21 is None or J22 is None:
+            continue  # Skip invalid points
 
-    # Mark centers in the low-wind regions
-    center_lats = ds['latitude'].values[::-1][centers[0]]
-    center_lons = ds['longitude'].values[centers[1]]
+        # Check if this point is a center
+        if is_center(J11[lat_idx, lon_idx], J12[lat_idx, lon_idx], J21[lat_idx, lon_idx], J22[lat_idx, lon_idx]):
+            centers_lats.append(ds['latitude'].values[::-1][lat_idx])
+            centers_lons.append(ds['longitude'].values[lon_idx])
 
     # Normalize vectors for RGB encoding
     u_normalized = u_time / magnitude
@@ -135,11 +138,14 @@ def update(frame):
         transform=ccrs.PlateCarree()
     )
 
-    # Mark center points
+    # Mark low_wind_speed points
     if center_marker:
         center_marker[0].remove()
     center_marker = ax.plot(
-        center_lons, center_lats, 'bo', markersize=4, label='Low Wind Speed'
+        low_wind_lons, low_wind_lats, 'bo', markersize=4, label='Low Wind Speed'
+    )
+    ax.plot(
+        centers_lons, centers_lats, 'go', markersize=8, label='Center'
     )
     ax.legend(loc='upper right')
     ax.set_title(f'Normal Map and Low Wind Regions at {time.values}')
