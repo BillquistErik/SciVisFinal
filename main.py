@@ -39,7 +39,7 @@ def calculate_vorticity(u, v, dx, dy):
     dudx = (u.shift(longitude=-1) - u) / dx
     dvdy = (v.shift(latitude=-1) - v) / dy
     return dvdy - dudx  
-def calculate_robustness(u, v, high_vorticity_idx, lats, lons, threshold):
+def calculate_robustness(magnitude, high_vorticity_idx, lats, lons, threshold):
     """
     Compute robustness for high-vorticity points using a merge tree at one level.
     
@@ -54,8 +54,6 @@ def calculate_robustness(u, v, high_vorticity_idx, lats, lons, threshold):
     Returns:
         filtered_points (list): List of (lat, lon) for points with robustness > threshold.
     """
-    # Calculate wind speed magnitude as the scalar field
-    magnitude = np.sqrt(u**2 + v**2)
     
     # Smooth the scalar field to remove small-scale noise
     magnitude_smoothed = gaussian_filter(magnitude, sigma=1.0)
@@ -72,7 +70,7 @@ def calculate_robustness(u, v, high_vorticity_idx, lats, lons, threshold):
         lon_center = lons[idx[1]]
         
         # Query the nearest neighbors within a fixed radius
-        neighbors_idx = kd_tree.query_ball_point([lat_center, lon_center], r=0.5)
+        neighbors_idx = kd_tree.query_ball_point([lat_center, lon_center], r=1)
         
         # Compute robustness as the difference between peak and lowest neighbor
         values = magnitude_smoothed.flatten()[neighbors_idx]
@@ -112,10 +110,10 @@ def update(frame):
 
     # Calculate robustness for high-vorticity points
     filtered_points = calculate_robustness(
-        u_time.values, v_time.values,
+        magnitude,
         high_vorticity_idx, 
         ds['latitude'].values[::-1], ds['longitude'].values, 
-        threshold=6  # Adjust robustness threshold as needed
+        threshold=15  # Adjust robustness threshold as needed
     )
 
      # Map angle to hue (0 to 1)
@@ -129,7 +127,7 @@ def update(frame):
 
     # Plot the normal map
     ax.clear()
-    ax.coastlines()
+    ax.coastlines(color='white', linewidth=0.8)
     ax.gridlines()
     ax.imshow(
         rgb_image, 
@@ -151,7 +149,7 @@ def update(frame):
         ax.plot(lon_filtered, lat_filtered, 'ro', markersize=4, label='Robust Points')
     
     ax.legend(loc='upper right')
-    ax.set_title(f'Normal Map and Low Wind Regions at {time.values}')
+    ax.set_title(f'Cyclones at {time.values}')
 
 
 ani = FuncAnimation(fig, update, frames=len(times), repeat=True)
