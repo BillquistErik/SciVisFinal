@@ -7,7 +7,7 @@ import cartopy.crs as ccrs
 from matplotlib.animation import FuncAnimation
 
 
-grib_file = 'data950pa.grib'  # Replace with your GRIB file path
+grib_file = 'data.grib'  # Replace with your GRIB file path
 ds = xr.open_dataset(grib_file, engine='cfgrib')
 
 
@@ -24,6 +24,7 @@ else:
     raise ValueError("No time dimension found in the dataset.")
 
 fig, ax = plt.subplots(subplot_kw={'projection': ccrs.PlateCarree()})
+plt.tight_layout()
 ax.coastlines()
 ax.gridlines()
 robust_marker = None
@@ -37,7 +38,7 @@ def calculate_vorticity(u, v, dx, dy):
     dudx = (u.shift(longitude=-1) - u) / dx
     dvdy = (v.shift(latitude=-1) - v) / dy
     return dvdy - dudx  
-def calculate_single_level_robustness(u, v, high_vorticity_idx, lats, lons, threshold):
+def calculate_robustness(u, v, high_vorticity_idx, lats, lons, threshold):
     """
     Compute robustness for high-vorticity points using a merge tree at one level.
     
@@ -108,11 +109,11 @@ def update(frame):
     high_vorticity_lons = ds['longitude'].values[high_vorticity_idx[1]]
 
     # Calculate robustness for high-vorticity points
-    filtered_points = calculate_single_level_robustness(
+    filtered_points = calculate_robustness(
         u_time.values, v_time.values,
         high_vorticity_idx, 
         ds['latitude'].values[::-1], ds['longitude'].values, 
-        threshold=7  # Adjust robustness threshold as needed
+        threshold=6  # Adjust robustness threshold as needed
     )
 
     # Normalize vectors for RGB encoding
@@ -137,12 +138,13 @@ def update(frame):
         transform=ccrs.PlateCarree()
     )
 
-    # Mark low-wind-speed points
+    # Mark high_vorticity points
     if center_marker:
         center_marker[0].remove()
     center_marker = ax.plot(
         high_vorticity_lons, high_vorticity_lats, 'bo', markersize=4, label='Cyclone Center'
     )
+    # Mark topologically_robust points
     if filtered_points:
         lat_filtered, lon_filtered = zip(*filtered_points)
         ax.plot(lon_filtered, lat_filtered, 'ro', markersize=4, label='Robust Points')
