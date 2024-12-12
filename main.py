@@ -5,6 +5,7 @@ from scipy.spatial import KDTree
 from scipy.ndimage import gaussian_filter
 import cartopy.crs as ccrs
 from matplotlib.animation import FuncAnimation
+import matplotlib.colors as mcolors
 
 
 grib_file = 'data.grib'  # Replace with your GRIB file path
@@ -94,8 +95,9 @@ def update(frame):
     u_time = u.isel(time=time_idx).isel(latitude=slice(None, None, -1))
     v_time = v.isel(time=time_idx).isel(latitude=slice(None, None, -1))
 
-    # Calculate wind magnitude
+    # Calculate wind magnitude & angle
     magnitude = np.sqrt(u_time**2 + v_time**2)
+    angle = np.arctan2(v_time, u_time)  # Angle in radians
 
     vorticityThreshold = 0.0001
 
@@ -116,15 +118,14 @@ def update(frame):
         threshold=6  # Adjust robustness threshold as needed
     )
 
-    # Normalize vectors for RGB encoding
-    u_normalized = u_time / magnitude
-    v_normalized = v_time / magnitude
-    R = (u_normalized + 1) / 2 * magnitude / np.max(magnitude)  # Map from [-1, 1] to [0, 1]
-    G = (v_normalized + 1) / 2 * magnitude / np.max(magnitude) # Map from [-1, 1] to [0, 1]
-    B = magnitude / np.max(magnitude) *magnitude / np.max(magnitude) # Normalize magnitude for brightness
+     # Map angle to hue (0 to 1)
+    hue = (angle + np.pi) / (2 * np.pi)  # Normalize from [-pi, pi] to [0, 1]
+    saturation = np.ones_like(magnitude)  # Saturation fixed to 1
+    value = magnitude / np.max(magnitude)  # Normalize magnitude to [0, 1]
 
-    # Create RGB image
-    rgb_image = np.dstack((R, G, B))
+    # Combine into HSV and convert to RGB
+    hsv_image = np.dstack((hue, saturation, value))
+    rgb_image = mcolors.hsv_to_rgb(hsv_image)
 
     # Plot the normal map
     ax.clear()
